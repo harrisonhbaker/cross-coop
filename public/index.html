@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cross-Coop — Collaborative Crossword</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ---------- Reset & Base ---------- */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #0f0f1a;
+      color: #e8e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ---------- Header ---------- */
+    header {
+      width: 100%;
+      padding: 1.2rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #16162a;
+      border-bottom: 1px solid #2a2a44;
+    }
+    .logo {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .logo span { color: #6C63FF; }
+    .room-badge {
+      font-size: 0.85rem;
+      background: #2a2a44;
+      padding: 0.35rem 0.8rem;
+      border-radius: 6px;
+      font-weight: 600;
+      display: none;
+    }
+    .room-badge code { color: #6C63FF; }
+
+    /* ---------- Screens ---------- */
+    .screen { display: none; flex-direction: column; align-items: center; padding: 2rem; }
+    .screen.active { display: flex; }
+
+    /* ---------- Lobby ---------- */
+    #lobby { gap: 2rem; margin-top: 4rem; }
+    #lobby h2 { font-size: 2rem; font-weight: 800; }
+    #lobby p { color: #9999b3; max-width: 420px; text-align: center; line-height: 1.5; }
+    .lobby-actions { display: flex; flex-direction: column; gap: 1rem; width: 100%; max-width: 380px; }
+    .lobby-actions input, .lobby-actions select {
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      border: 1px solid #2a2a44;
+      background: #1c1c34;
+      color: #e8e8f0;
+      font-size: 0.95rem;
+      font-family: inherit;
+    }
+    .lobby-actions input:focus, .lobby-actions select:focus {
+      outline: none;
+      border-color: #6C63FF;
+    }
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .btn-primary { background: #6C63FF; color: #fff; }
+    .btn-primary:hover { background: #5b54e0; }
+    .btn-secondary { background: #2a2a44; color: #e8e8f0; }
+    .btn-secondary:hover { background: #3a3a5c; }
+    .divider { display: flex; align-items: center; gap: 1rem; width: 100%; color: #555; font-size: 0.85rem; }
+    .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: #2a2a44; }
+    .join-row { display: flex; gap: 0.5rem; }
+    .join-row input { flex: 1; }
+
+    /* ---------- Game ---------- */
+    #game {
+      gap: 1.5rem;
+      width: 100%;
+      max-width: 1100px;
+      padding: 1.5rem;
+    }
+    .game-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+    }
+    .game-header h2 { font-size: 1.3rem; }
+    .players-bar {
+      display: flex;
+      gap: 0.75rem;
+    }
+    .player-tag {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.3rem 0.7rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: #1c1c34;
+      border: 2px solid;
+    }
+    .player-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .game-layout {
+      display: flex;
+      gap: 2rem;
+      width: 100%;
+      align-items: flex-start;
+    }
+
+    /* ---------- Grid ---------- */
+    .grid-wrapper {
+      flex-shrink: 0;
+    }
+    .crossword-grid {
+      display: grid;
+      gap: 1px;
+      background: #333;
+      border: 2px solid #555;
+      border-radius: 4px;
+    }
+    .cell {
+      position: relative;
+      width: 42px;
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1c1c34;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .cell.black {
+      background: #0f0f1a;
+      cursor: default;
+    }
+    .cell input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: transparent;
+      color: #e8e8f0;
+      font-size: 1.1rem;
+      font-weight: 700;
+      text-align: center;
+      text-transform: uppercase;
+      caret-color: transparent;
+      font-family: inherit;
+    }
+    .cell input:focus {
+      outline: none;
+    }
+    .cell.selected {
+      background: #3a3a6e;
+    }
+    .cell.highlighted {
+      background: #26264a;
+    }
+    .cell .number {
+      position: absolute;
+      top: 2px;
+      left: 3px;
+      font-size: 0.55rem;
+      font-weight: 600;
+      color: #8888aa;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Remote cursor */
+    .cell.remote-cursor {
+      box-shadow: inset 0 0 0 2px var(--remote-color, #FF6584);
+    }
+
+    /* Correct animation */
+    .cell.correct {
+      animation: correctPop 0.3s ease;
+    }
+    @keyframes correctPop {
+      0% { background: #1c1c34; }
+      50% { background: #2a5a3a; }
+      100% { background: #1c1c34; }
+    }
+
+    /* ---------- Clues ---------- */
+    .clues-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      max-height: 600px;
+      overflow-y: auto;
+      padding-right: 0.5rem;
+    }
+    .clues-panel::-webkit-scrollbar { width: 5px; }
+    .clues-panel::-webkit-scrollbar-track { background: transparent; }
+    .clues-panel::-webkit-scrollbar-thumb { background: #2a2a44; border-radius: 4px; }
+
+    .clue-section h3 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #6C63FF;
+      margin-bottom: 0.5rem;
+    }
+    .clue-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+    .clue-item {
+      padding: 0.4rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      line-height: 1.4;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .clue-item:hover { background: #26264a; }
+    .clue-item.active { background: #2a2a55; color: #fff; }
+    .clue-item .clue-num {
+      font-weight: 700;
+      color: #6C63FF;
+      margin-right: 0.3rem;
+    }
+
+    /* ---------- Completion Overlay ---------- */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 15, 26, 0.92);
+      z-index: 100;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+    }
+    .overlay.active { display: flex; }
+    .overlay h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #6C63FF, #FF6584);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .overlay p { color: #9999b3; font-size: 1.1rem; }
+
+    /* ---------- Error Toast ---------- */
+    .toast {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background: #ff4444;
+      color: #fff;
+      padding: 0.75rem 1.2rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      z-index: 200;
+      display: none;
+    }
+    .toast.show { display: block; animation: fadeIn 0.3s; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; } }
+
+    /* ---------- Responsive ---------- */
+    @media (max-width: 800px) {
+      .game-layout { flex-direction: column; align-items: center; }
+      .cell { width: 32px; height: 32px; }
+      .cell .number { font-size: 0.45rem; }
+      .cell input { font-size: 0.9rem; }
+      .clues-panel { max-height: 300px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">Cross<span>-Coop</span></div>
+    <div class="room-badge" id="roomBadge">Room: <code id="roomCode"></code></div>
+  </header>
+
+  <!-- ===== Lobby Screen ===== -->
+  <div class="screen active" id="lobby">
+    <h2>Solve Together</h2>
+    <p>Work on a crossword puzzle in real-time with a friend. Create a room and share the code!</p>
+
+    <div class="lobby-actions">
+      <input type="text" id="playerName" placeholder="Your name" maxlength="20" />
+      <select id="puzzleSelect"></select>
+      <button class="btn btn-primary" id="createBtn">Create Room</button>
+
+      <div class="divider">or join an existing room</div>
+
+      <div class="join-row">
+        <input type="text" id="roomInput" placeholder="Room code" maxlength="8" />
+        <button class="btn btn-secondary" id="joinBtn">Join</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Game Screen ===== -->
+  <div class="screen" id="game">
+    <div class="game-header">
+      <h2 id="puzzleTitle"></h2>
+      <div class="players-bar" id="playersBar"></div>
+    </div>
+    <div class="game-layout">
+      <div class="grid-wrapper" id="gridWrapper"></div>
+      <div class="clues-panel" id="cluesPanel"></div>
+    </div>
+  </div>
+
+  <!-- ===== Completion Overlay ===== -->
+  <div class="overlay" id="completeOverlay">
+    <h1>Congratulations!</h1>
+    <p>You solved the crossword together!</p>
+    <button class="btn btn-primary" onclick="location.reload()">Play Again</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
