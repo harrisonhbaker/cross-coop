@@ -3,7 +3,6 @@ const http = require("http");
 const { Server } = require("socket.io");
 const { v4: uuidv4 } = require("uuid");
 const path = require("path");
-const puzzles = require("./puzzles");
 
 const app = express();
 const server = http.createServer(app);
@@ -15,34 +14,124 @@ app.use(express.static(path.join(__dirname, "public")));
 // rooms[roomId] = { puzzle, grid (current state), players: { socketId: { name, color, cursor } } }
 const rooms = {};
 
+// Cache fetched puzzles so we don't re-fetch the same date
+const puzzleCache = {};
+
 const PLAYER_COLORS = ["#6C63FF", "#FF6584"];
+
+// ---------- NYT Crossword Fetcher ----------
+
+async function fetchNYTPuzzle(dateStr) {
+  // dateStr format: "YYYY-MM-DD"
+  if (puzzleCache[dateStr]) return puzzleCache[dateStr];
+
+  const [year, month, day] = dateStr.split("-");
+  const url = `https://raw.githubusercontent.com/doshea/nyt_crosswords/master/${year}/${month}/${day}.json`;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Puzzle not found for ${dateStr} (HTTP ${res.status})`);
+
+  const raw = await res.json();
+  const puzzle = transformNYTPuzzle(raw, dateStr);
+  puzzleCache[dateStr] = puzzle;
+  return puzzle;
+}
+
+function transformNYTPuzzle(raw, dateStr) {
+  const rows = raw.size.rows;
+  const cols = raw.size.cols;
+
+  // Build 2D solution grid and gridnums
+  const solution = [];
+  const gridnums = [];
+  for (let r = 0; r < rows; r++) {
+    const solRow = [];
+    const numRow = [];
+    for (let c = 0; c < cols; c++) {
+      const idx = r * cols + c;
+      const cell = raw.grid[idx];
+      solRow.push(cell === "." ? null : cell);
+      numRow.push(raw.gridnums[idx] || 0);
+    }
+    solution.push(solRow);
+    gridnums.push(numRow);
+  }
+
+  // Parse clues — format: "1. Clue text here"
+  function parseClues(clueList) {
+    return clueList.map((clueStr) => {
+      const match = clueStr.match(/^(\d+)\.\s*(.+)$/);
+      if (!match) return { number: 0, text: clueStr };
+      return { number: parseInt(match[1], 10), text: match[2] };
+    });
+  }
+
+  // Build across clues with row/col positions
+  const acrossClues = parseClues(raw.clues.across).map((clue) => {
+    const pos = findCluePosition(gridnums, clue.number);
+    return { ...clue, ...pos };
+  });
+
+  const downClues = parseClues(raw.clues.down).map((clue) => {
+    const pos = findCluePosition(gridnums, clue.number);
+    return { ...clue, ...pos };
+  });
+
+  const title = raw.title || `NYT Crossword — ${dateStr}`;
+  const dow = raw.dow || "";
+
+  return {
+    id: `nyt-${dateStr}`,
+    title,
+    dow,
+    date: dateStr,
+    rows,
+    cols,
+    solution,
+    gridnums,
+    clues: { across: acrossClues, down: downClues },
+  };
+}
+
+function findCluePosition(gridnums, number) {
+  for (let r = 0; r < gridnums.length; r++) {
+    for (let c = 0; c < gridnums[r].length; c++) {
+      if (gridnums[r][c] === number) return { row: r, col: c };
+    }
+  }
+  return { row: 0, col: 0 };
+}
 
 // ---------- REST endpoints ----------
 
-app.get("/api/puzzles", (_req, res) => {
-  res.json(
-    puzzles.map((p) => ({ id: p.id, title: p.title, size: p.size }))
-  );
+// Fetch puzzle info (lightweight — just checks if it exists)
+app.get("/api/puzzle/:date", async (req, res) => {
+  try {
+    const puzzle = await fetchNYTPuzzle(req.params.date);
+    res.json({ id: puzzle.id, title: puzzle.title, dow: puzzle.dow, rows: puzzle.rows, cols: puzzle.cols });
+  } catch (err) {
+    res.status(404).json({ error: err.message });
+  }
 });
 
-app.post("/api/rooms", express.json(), (req, res) => {
-  const { puzzleId } = req.body;
-  const puzzle = puzzles.find((p) => p.id === puzzleId);
-  if (!puzzle) return res.status(404).json({ error: "Puzzle not found" });
+app.post("/api/rooms", express.json(), async (req, res) => {
+  try {
+    const { date } = req.body;
+    if (!date) return res.status(400).json({ error: "Date is required" });
 
-  const roomId = uuidv4().slice(0, 8);
-  // Build an empty grid from the solution (null stays null, letters become "")
-  const grid = puzzle.solution.map((row) =>
-    row.map((cell) => (cell === null ? null : ""))
-  );
+    const puzzle = await fetchNYTPuzzle(date);
 
-  rooms[roomId] = {
-    puzzle,
-    grid,
-    players: {},
-  };
+    const roomId = uuidv4().slice(0, 8);
+    // Build an empty grid from the solution (null stays null, letters become "")
+    const grid = puzzle.solution.map((row) =>
+      row.map((cell) => (cell === null ? null : ""))
+    );
 
-  res.json({ roomId });
+    rooms[roomId] = { puzzle, grid, players: {} };
+    res.json({ roomId });
+  } catch (err) {
+    res.status(404).json({ error: err.message });
+  }
 });
 
 // ---------- Socket.IO ----------
@@ -79,8 +168,12 @@ io.on("connection", (socket) => {
       puzzle: {
         id: room.puzzle.id,
         title: room.puzzle.title,
-        size: room.puzzle.size,
+        dow: room.puzzle.dow,
+        date: room.puzzle.date,
+        rows: room.puzzle.rows,
+        cols: room.puzzle.cols,
         clues: room.puzzle.clues,
+        gridnums: room.puzzle.gridnums,
         // Send grid shape (null = black) without solutions
         shape: room.puzzle.solution.map((row) =>
           row.map((cell) => (cell === null ? null : true))

@@ -67,6 +67,23 @@
       outline: none;
       border-color: #6C63FF;
     }
+    /* Date picker custom styling */
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(0.7);
+      cursor: pointer;
+    }
+    .puzzle-preview {
+      font-size: 0.85rem;
+      color: #9999b3;
+      min-height: 1.3rem;
+      text-align: center;
+    }
+    .puzzle-preview.found { color: #4CAF50; }
+    .puzzle-preview.error { color: #ff6666; }
+    .puzzle-preview.loading { color: #6C63FF; }
+    .date-row { display: flex; gap: 0.5rem; align-items: center; }
+    .date-row input { flex: 1; }
+    .random-btn { flex-shrink: 0; font-size: 1.1rem; padding: 0.7rem 0.9rem; }
     .btn {
       padding: 0.75rem 1.5rem;
       border: none;
@@ -309,8 +326,15 @@
 
     <div class="lobby-actions">
       <input type="text" id="playerName" placeholder="Your name" maxlength="20" />
-      <select id="puzzleSelect"></select>
-      <button class="btn btn-primary" id="createBtn">Create Room</button>
+
+      <label style="font-size:0.85rem;color:#9999b3;">Pick a date (NYT puzzles: 1976 – 2017)</label>
+      <div class="date-row">
+        <input type="date" id="puzzleDate" min="1976-01-05" max="2017-12-31" />
+        <button class="btn btn-secondary random-btn" id="randomBtn" title="Random puzzle">🎲</button>
+      </div>
+      <div class="puzzle-preview" id="puzzlePreview"></div>
+
+      <button class="btn btn-primary" id="createBtn" disabled>Create Room</button>
 
       <div class="divider">or join an existing room</div>
 

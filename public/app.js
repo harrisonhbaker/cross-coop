@@ -4,13 +4,15 @@ const socket = io();
 // DOM refs
 const lobbyScreen = document.getElementById("lobby");
 const gameScreen = document.getElementById("game");
-const puzzleSelect = document.getElementById("puzzleSelect");
+const puzzleDateInput = document.getElementById("puzzleDate");
+const puzzlePreview = document.getElementById("puzzlePreview");
+const randomBtn = document.getElementById("randomBtn");
 const createBtn = document.getElementById("createBtn");
 const joinBtn = document.getElementById("joinBtn");
 const roomInput = document.getElementById("roomInput");
 const playerNameInput = document.getElementById("playerName");
 const roomBadge = document.getElementById("roomBadge");
-const roomCode = document.getElementById("roomCode");
+const roomCodeEl = document.getElementById("roomCode");
 const puzzleTitle = document.getElementById("puzzleTitle");
 const playersBar = document.getElementById("playersBar");
 const gridWrapper = document.getElementById("gridWrapper");
@@ -25,34 +27,82 @@ let state = {
   grid: null,
   players: {},
   myId: null,
-  selectedCell: null,     // { row, col }
-  direction: "across",    // "across" | "down"
-  activeClue: null,       // clue object
+  selectedCell: null,
+  direction: "across",
+  activeClue: null,
 };
 
-// ---------- Lobby ----------
+// ---------- Lobby — Date Picker ----------
 
-async function loadPuzzles() {
-  const res = await fetch("/api/puzzles");
-  const puzzles = await res.json();
-  puzzles.forEach((p) => {
-    const opt = document.createElement("option");
-    opt.value = p.id;
-    opt.textContent = `${p.title} (${p.size}×${p.size})`;
-    puzzleSelect.appendChild(opt);
-  });
+// Set default date to a known good puzzle
+puzzleDateInput.value = "2015-01-01";
+checkDate("2015-01-01");
+
+puzzleDateInput.addEventListener("change", () => {
+  const date = puzzleDateInput.value;
+  if (date) checkDate(date);
+});
+
+randomBtn.addEventListener("click", () => {
+  const start = new Date(1976, 0, 5);
+  const end = new Date(2017, 11, 31);
+  const rand = new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
+  const yyyy = rand.getFullYear();
+  const mm = String(rand.getMonth() + 1).padStart(2, "0");
+  const dd = String(rand.getDate()).padStart(2, "0");
+  const dateStr = `${yyyy}-${mm}-${dd}`;
+  puzzleDateInput.value = dateStr;
+  checkDate(dateStr);
+});
+
+let checkAbort = null;
+async function checkDate(dateStr) {
+  createBtn.disabled = true;
+  puzzlePreview.className = "puzzle-preview loading";
+  puzzlePreview.textContent = "Loading...";
+
+  if (checkAbort) checkAbort.abort();
+  const controller = new AbortController();
+  checkAbort = controller;
+
+  try {
+    const res = await fetch(`/api/puzzle/${dateStr}`, { signal: controller.signal });
+    if (!res.ok) throw new Error("not found");
+    const info = await res.json();
+    puzzlePreview.className = "puzzle-preview found";
+    puzzlePreview.textContent = `${info.dow ? info.dow + " — " : ""}${info.rows}×${info.cols} grid`;
+    createBtn.disabled = false;
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    puzzlePreview.className = "puzzle-preview error";
+    puzzlePreview.textContent = "No puzzle found for this date — try another";
+    createBtn.disabled = true;
+  }
 }
-loadPuzzles();
+
+// ---------- Lobby Actions ----------
 
 createBtn.addEventListener("click", async () => {
-  const puzzleId = puzzleSelect.value;
-  const res = await fetch("/api/rooms", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ puzzleId }),
-  });
-  const { roomId } = await res.json();
-  joinRoom(roomId);
+  const date = puzzleDateInput.value;
+  if (!date) return;
+  createBtn.disabled = true;
+  createBtn.textContent = "Creating...";
+
+  try {
+    const res = await fetch("/api/rooms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    joinRoom(data.roomId);
+  } catch (err) {
+    showToast(err.message, "#ff4444");
+  } finally {
+    createBtn.disabled = false;
+    createBtn.textContent = "Create Room";
+  }
 });
 
 joinBtn.addEventListener("click", () => {
@@ -60,7 +110,6 @@ joinBtn.addEventListener("click", () => {
   if (code) joinRoom(code);
 });
 
-// Also allow Enter in the room input
 roomInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") joinBtn.click();
 });
@@ -79,14 +128,12 @@ socket.on("room-state", (data) => {
   state.players = data.players;
   state.myId = data.you;
 
-  // Update URL for easy sharing
   history.replaceState(null, "", `?room=${data.roomId}`);
 
-  // Show game
   lobbyScreen.classList.remove("active");
   gameScreen.classList.add("active");
   roomBadge.style.display = "block";
-  roomCode.textContent = data.roomId;
+  roomCodeEl.textContent = data.roomId;
   puzzleTitle.textContent = data.puzzle.title;
 
   renderPlayers();
@@ -145,44 +192,45 @@ function renderPlayers() {
     const tag = document.createElement("div");
     tag.className = "player-tag";
     tag.style.borderColor = p.color;
-    tag.innerHTML = `<div class="player-dot" style="background:${p.color}"></div>${p.name}${id === state.myId ? " (you)" : ""}`;
+    tag.innerHTML = `<div class="player-dot" style="background:${p.color}"></div>${escHtml(p.name)}${id === state.myId ? " (you)" : ""}`;
     playersBar.appendChild(tag);
   });
 }
 
 function renderGrid() {
   const { puzzle, grid } = state;
-  const size = puzzle.size;
+  const rows = puzzle.rows;
+  const cols = puzzle.cols;
+
+  // Compute cell size to fit nicely
+  const maxWidth = Math.min(window.innerWidth - 60, 660);
+  const cellSize = Math.max(24, Math.min(42, Math.floor(maxWidth / cols)));
 
   gridWrapper.innerHTML = "";
   const gridEl = document.createElement("div");
   gridEl.className = "crossword-grid";
-  gridEl.style.gridTemplateColumns = `repeat(${size}, 42px)`;
+  gridEl.style.gridTemplateColumns = `repeat(${cols}, ${cellSize}px)`;
 
-  // Build a number map from clues
-  const numberMap = {};
-  [...puzzle.clues.across, ...puzzle.clues.down].forEach((clue) => {
-    const key = `${clue.row}-${clue.col}`;
-    numberMap[key] = clue.number;
-  });
-
-  for (let r = 0; r < grid.length; r++) {
-    for (let c = 0; c < grid[r].length; c++) {
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
       const cell = document.createElement("div");
       cell.className = "cell";
+      cell.style.width = cellSize + "px";
+      cell.style.height = cellSize + "px";
       cell.dataset.row = r;
       cell.dataset.col = c;
 
       if (grid[r][c] === null) {
         cell.classList.add("black");
       } else {
-        // Number label
-        const key = `${r}-${c}`;
-        if (numberMap[key] !== undefined) {
-          const num = document.createElement("span");
-          num.className = "number";
-          num.textContent = numberMap[key];
-          cell.appendChild(num);
+        // Number label from gridnums
+        const num = puzzle.gridnums[r][c];
+        if (num > 0) {
+          const numEl = document.createElement("span");
+          numEl.className = "number";
+          numEl.style.fontSize = Math.max(7, cellSize * 0.26) + "px";
+          numEl.textContent = num;
+          cell.appendChild(numEl);
         }
 
         const input = document.createElement("input");
@@ -191,6 +239,7 @@ function renderGrid() {
         input.value = grid[r][c] || "";
         input.dataset.row = r;
         input.dataset.col = c;
+        input.style.fontSize = Math.max(10, cellSize * 0.5) + "px";
         input.setAttribute("autocomplete", "off");
         input.setAttribute("autocorrect", "off");
         input.setAttribute("spellcheck", "false");
@@ -199,7 +248,6 @@ function renderGrid() {
         input.addEventListener("input", (e) => handleInput(e, r, c));
         input.addEventListener("keydown", (e) => handleKeydown(e, r, c));
         input.addEventListener("click", () => {
-          // If clicking the same cell, toggle direction
           if (state.selectedCell && state.selectedCell.row === r && state.selectedCell.col === c) {
             state.direction = state.direction === "across" ? "down" : "across";
             highlightWord();
@@ -234,7 +282,7 @@ function renderClues() {
       li.dataset.direction = dir;
       li.dataset.row = clue.row;
       li.dataset.col = clue.col;
-      li.innerHTML = `<span class="clue-num">${clue.number}</span>${clue.text}`;
+      li.innerHTML = `<span class="clue-num">${clue.number}.</span> ${escHtml(clue.text)}`;
       li.addEventListener("click", () => {
         state.direction = dir;
         selectCell(clue.row, clue.col);
@@ -260,10 +308,7 @@ function handleInput(e, row, col) {
   const value = e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(-1);
   e.target.value = value;
   socket.emit("cell-update", { row, col, value });
-
-  if (value) {
-    moveToNext(row, col);
-  }
+  if (value) moveToNext(row, col);
 }
 
 function handleKeydown(e, row, col) {
@@ -274,8 +319,6 @@ function handleKeydown(e, row, col) {
     if (input && input.value === "") {
       e.preventDefault();
       moveToPrev(row, col);
-    } else if (input) {
-      // The input event will handle clearing
     }
     return;
   }
@@ -291,7 +334,6 @@ function handleKeydown(e, row, col) {
   if (arrowMap[e.key]) {
     e.preventDefault();
     const [dr, dc] = arrowMap[e.key];
-    // Set direction based on arrow
     if (dr !== 0) state.direction = "down";
     if (dc !== 0) state.direction = "across";
 
@@ -308,7 +350,6 @@ function handleKeydown(e, row, col) {
     }
   }
 
-  // If a letter key is pressed and cell already has a value, replace it
   if (/^[a-zA-Z]$/.test(e.key)) {
     const input = getCellInput(row, col);
     if (input) {
@@ -344,7 +385,6 @@ function moveToPrev(row, col) {
     if (state.grid[nr][nc] !== null) {
       selectCell(nr, nc);
       getCellInput(nr, nc)?.focus();
-      // Clear the cell we moved to
       const input = getCellInput(nr, nc);
       if (input && input.value) {
         input.value = "";
@@ -358,7 +398,6 @@ function moveToPrev(row, col) {
 }
 
 function highlightWord() {
-  // Clear existing highlights
   document.querySelectorAll(".cell.selected, .cell.highlighted").forEach((c) => {
     c.classList.remove("selected", "highlighted");
   });
@@ -370,16 +409,12 @@ function highlightWord() {
   const cell = getCell(row, col);
   if (cell) cell.classList.add("selected");
 
-  // Find the word cells for the current direction
   const wordCells = getWordCells(row, col, state.direction);
   wordCells.forEach(([r, c]) => {
     const el = getCell(r, c);
-    if (el && !(r === row && c === col)) {
-      el.classList.add("highlighted");
-    }
+    if (el && !(r === row && c === col)) el.classList.add("highlighted");
   });
 
-  // Highlight the corresponding clue
   const clue = findClueForCell(row, col, state.direction);
   if (clue) {
     const clueEl = document.querySelector(
@@ -397,14 +432,12 @@ function getWordCells(row, col, direction) {
   const cells = [];
   const [dr, dc] = direction === "across" ? [0, 1] : [1, 0];
 
-  // Go backward to find start of word
   let sr = row, sc = col;
   while (sr - dr >= 0 && sc - dc >= 0 && state.grid[sr - dr]?.[sc - dc] !== null && state.grid[sr - dr]?.[sc - dc] !== undefined) {
     sr -= dr;
     sc -= dc;
   }
 
-  // Go forward from start
   let r = sr, c = sc;
   while (r < state.grid.length && c < state.grid[0].length && state.grid[r]?.[c] !== null && state.grid[r]?.[c] !== undefined) {
     cells.push([r, c]);
@@ -442,6 +475,12 @@ function showToast(msg, color = "#ff4444") {
   toast.style.background = color;
   toast.classList.add("show");
   setTimeout(() => toast.classList.remove("show"), 3000);
+}
+
+function escHtml(str) {
+  const el = document.createElement("span");
+  el.textContent = str;
+  return el.innerHTML;
 }
 
 // ---------- Auto-join from URL ----------
