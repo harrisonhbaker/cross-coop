@@ -249,7 +249,16 @@ function checkCompletion(room, roomId) {
   io.to(roomId).emit("puzzle-complete");
 }
 
+const DEFAULT_PUZZLE_DATE = "2015-01-01";
+
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`🧩 Cross-Coop running at http://localhost:${PORT}`);
+  // Pre-warm the cache for the default puzzle so the lobby loads instantly
+  try {
+    await fetchNYTPuzzle(DEFAULT_PUZZLE_DATE);
+    console.log(`✅ Default puzzle (${DEFAULT_PUZZLE_DATE}) cached`);
+  } catch (err) {
+    console.warn(`⚠️  Could not pre-cache default puzzle: ${err.message}`);
+  }
 });

@@ -36,7 +36,6 @@ let state = {
 
 // Set default date to a known good puzzle
 puzzleDateInput.value = "2015-01-01";
-checkDate("2015-01-01");
 
 puzzleDateInput.addEventListener("change", () => {
   const date = puzzleDateInput.value;
@@ -56,7 +55,20 @@ randomBtn.addEventListener("click", () => {
 });
 
 let checkAbort = null;
-async function checkDate(dateStr) {
+
+function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("Request timed out"));
+    }, timeoutMs);
+    fetch(url, options).then(
+      (res) => { clearTimeout(timer); resolve(res); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
+async function checkDate(dateStr, retries = 3) {
   createBtn.disabled = true;
   puzzlePreview.className = "puzzle-preview loading";
   puzzlePreview.textContent = "Loading...";
@@ -65,20 +77,36 @@ async function checkDate(dateStr) {
   const controller = new AbortController();
   checkAbort = controller;
 
-  try {
-    const res = await fetch(`/api/puzzle/${dateStr}`, { signal: controller.signal });
-    if (!res.ok) throw new Error("not found");
-    const info = await res.json();
-    puzzlePreview.className = "puzzle-preview found";
-    puzzlePreview.textContent = `${info.dow ? info.dow + " — " : ""}${info.rows}×${info.cols} grid`;
-    createBtn.disabled = false;
-  } catch (err) {
-    if (err.name === "AbortError") return;
-    puzzlePreview.className = "puzzle-preview error";
-    puzzlePreview.textContent = "No puzzle found for this date — try another";
-    createBtn.disabled = true;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetchWithTimeout(
+        `/api/puzzle/${dateStr}`,
+        { signal: controller.signal },
+        15000
+      );
+      if (!res.ok) throw new Error("not found");
+      const info = await res.json();
+      puzzlePreview.className = "puzzle-preview found";
+      puzzlePreview.textContent = `${info.dow ? info.dow + " — " : ""}${info.rows}×${info.cols} grid`;
+      createBtn.disabled = false;
+      return;
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+      puzzlePreview.className = "puzzle-preview error";
+      puzzlePreview.textContent = "No puzzle found for this date — try another";
+      createBtn.disabled = true;
+    }
   }
 }
+
+// Load the default puzzle once socket is connected (ensures server is ready)
+socket.on("connect", () => {
+  checkDate(puzzleDateInput.value);
+});
 
 // ---------- Lobby Actions ----------
 
@@ -247,12 +275,12 @@ function renderGrid() {
         input.addEventListener("focus", () => selectCell(r, c));
         input.addEventListener("input", (e) => handleInput(e, r, c));
         input.addEventListener("keydown", (e) => handleKeydown(e, r, c));
-        input.addEventListener("click", () => {
-          if (state.selectedCell && state.selectedCell.row === r && state.selectedCell.col === c) {
-            state.direction = state.direction === "across" ? "down" : "across";
-            highlightWord();
-          }
+        input.addEventListener("dblclick", (e) => {
+          e.preventDefault();
+          state.direction = state.direction === "across" ? "down" : "across";
+          highlightWord();
         });
+
 
         cell.appendChild(input);
       }
@@ -314,19 +342,34 @@ function handleInput(e, row, col) {
 function handleKeydown(e, row, col) {
   const { direction } = state;
 
-  if (e.key === "Backspace") {
+  if (e.key === "Backspace" || e.key === "Delete") {
+    e.preventDefault();
     const input = getCellInput(row, col);
-    if (input && input.value === "") {
-      e.preventDefault();
+    if (input && input.value !== "") {
+      // Clear the current cell
+      input.value = "";
+      socket.emit("cell-update", { row, col, value: "" });
+    } else if (e.key === "Backspace") {
+      // Cell already empty — move back and clear that cell
       moveToPrev(row, col);
     }
     return;
   }
 
+  if (e.key === " ") {
+    e.preventDefault();
+    state.direction = state.direction === "across" ? "down" : "across";
+    highlightWord();
+    return;
+  }
+
   if (e.key === "Tab") {
     e.preventDefault();
-    state.direction = direction === "across" ? "down" : "across";
-    highlightWord();
+    if (e.shiftKey) {
+      moveToPrevClue(row, col);
+    } else {
+      moveToNextClue(row, col);
+    }
     return;
   }
 
@@ -377,6 +420,58 @@ function moveToNext(row, col) {
   }
 }
 
+function moveToNextClue(row, col) {
+  const dir = state.direction;
+  const clues = state.puzzle.clues[dir];
+  const otherDir = dir === "across" ? "down" : "across";
+  const otherClues = state.puzzle.clues[otherDir];
+
+  // Find which clue the current cell belongs to
+  const currentClue = findClueForCell(row, col, dir);
+  let idx = currentClue ? clues.findIndex((c) => c.row === currentClue.row && c.col === currentClue.col) : -1;
+
+  if (idx >= 0 && idx < clues.length - 1) {
+    // Next clue in same direction
+    const next = clues[idx + 1];
+    selectCell(next.row, next.col);
+    getCellInput(next.row, next.col)?.focus();
+  } else {
+    // Wrap to first clue of the other direction
+    state.direction = otherDir;
+    const next = otherClues[0];
+    if (next) {
+      selectCell(next.row, next.col);
+      getCellInput(next.row, next.col)?.focus();
+    }
+  }
+}
+
+function moveToPrevClue(row, col) {
+  const dir = state.direction;
+  const clues = state.puzzle.clues[dir];
+  const otherDir = dir === "across" ? "down" : "across";
+  const otherClues = state.puzzle.clues[otherDir];
+
+  // Find which clue the current cell belongs to
+  const currentClue = findClueForCell(row, col, dir);
+  let idx = currentClue ? clues.findIndex((c) => c.row === currentClue.row && c.col === currentClue.col) : -1;
+
+  if (idx > 0) {
+    // Previous clue in same direction
+    const prev = clues[idx - 1];
+    selectCell(prev.row, prev.col);
+    getCellInput(prev.row, prev.col)?.focus();
+  } else {
+    // Wrap to last clue of the other direction
+    state.direction = otherDir;
+    const prev = otherClues[otherClues.length - 1];
+    if (prev) {
+      selectCell(prev.row, prev.col);
+      getCellInput(prev.row, prev.col)?.focus();
+    }
+  }
+}
+
 function moveToPrev(row, col) {
   const [dr, dc] = state.direction === "across" ? [0, -1] : [-1, 0];
   let nr = row + dr;
@@ -385,11 +480,6 @@ function moveToPrev(row, col) {
     if (state.grid[nr][nc] !== null) {
       selectCell(nr, nc);
       getCellInput(nr, nc)?.focus();
-      const input = getCellInput(nr, nc);
-      if (input && input.value) {
-        input.value = "";
-        socket.emit("cell-update", { row: nr, col: nc, value: "" });
-      }
       return;
     }
     nr += dr;
