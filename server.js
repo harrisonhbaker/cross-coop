@@ -18,7 +18,10 @@ const rooms = {};
 // Cache fetched puzzles so we don't re-fetch the same date
 const puzzleCache = {};
 
-const PLAYER_COLORS = ["#6C63FF", "#FF6584"];
+const PLAYER_COLORS = [
+  "#6C63FF", "#FF6584", "#43C59E", "#FFB347", "#4FC3F7",
+  "#BA68C8", "#F06292", "#AED581", "#FF8A65", "#4DB6AC",
+];
 
 // ---------- NYT Crossword Fetcher ----------
 
@@ -225,8 +228,8 @@ io.on("connection", (socket) => {
     }
 
     const playerCount = Object.keys(room.players).length;
-    if (playerCount >= 2 && !room.players[socket.id]) {
-      socket.emit("error-msg", "Room is full (max 2 players)");
+    if (playerCount >= 10 && !room.players[socket.id]) {
+      socket.emit("error-msg", "Room is full (max 10 players)");
       return;
     }
 

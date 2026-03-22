@@ -206,8 +206,9 @@ socket.on("player-joined", ({ id, name, color }) => {
 socket.on("player-left", ({ id }) => {
   const name = state.players[id]?.name || "Player";
   delete state.players[id];
+  delete remoteCursors[id];
   renderPlayers();
-  clearRemoteCursors();
+  renderRemoteCursors();
   showToast(`${name} left`, "#FF9800");
 });
 
@@ -223,14 +224,24 @@ socket.on("cell-updated", ({ row, col, value, player }) => {
   }
 });
 
-socket.on("cursor-moved", ({ player, row, col, direction, color }) => {
-  clearRemoteCursors();
-  const cell = getCell(row, col);
-  if (cell) {
-    cell.classList.add("remote-cursor");
-    cell.style.setProperty("--remote-color", color);
-  }
+// Track each remote player's cursor position: { [playerId]: { row, col, color } }
+const remoteCursors = {};
+
+socket.on("cursor-moved", ({ player, row, col, color }) => {
+  remoteCursors[player] = { row, col, color };
+  renderRemoteCursors();
 });
+
+function renderRemoteCursors() {
+  clearRemoteCursors();
+  for (const { row, col, color } of Object.values(remoteCursors)) {
+    const cell = getCell(row, col);
+    if (cell) {
+      cell.classList.add("remote-cursor");
+      cell.style.setProperty("--remote-color", color);
+    }
+  }
+}
 
 // ---------- Timer ----------
 
