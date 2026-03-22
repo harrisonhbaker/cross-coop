@@ -132,7 +132,14 @@ createBtn.addEventListener("click", async () => {
   try {
     let res;
     if (activeMode === "generated") {
-      res = await fetch("/api/rooms/generated", { method: "POST" });
+      const theme = document.getElementById("genTheme").value;
+      const size = document.getElementById("genSize").value;
+      const difficulty = document.getElementById("genDifficulty").value;
+      res = await fetch("/api/rooms/generated", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ theme: theme || undefined, size: size || undefined, difficulty: difficulty || undefined }),
+      });
     } else {
       const date = puzzleDateInput.value;
       if (!date) return;
@@ -187,6 +194,7 @@ socket.on("room-state", (data) => {
   renderPlayers();
   renderGrid();
   renderClues();
+  startTimer();
 });
 
 socket.on("player-joined", ({ id, name, color }) => {
@@ -224,8 +232,120 @@ socket.on("cursor-moved", ({ player, row, col, direction, color }) => {
   }
 });
 
-socket.on("puzzle-complete", () => {
+// ---------- Timer ----------
+
+let timerSeconds = 0;
+let timerPaused = false;
+let timerInterval = null;
+const timerDisplay = document.getElementById("timerDisplay");
+const timerBtn = document.getElementById("timerBtn");
+
+function startTimer() {
+  timerSeconds = 0;
+  timerPaused = false;
+  timerDisplay.textContent = "0:00";
+  timerBtn.textContent = "⏸";
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    if (!timerPaused) {
+      timerSeconds++;
+      const m = Math.floor(timerSeconds / 60);
+      const s = timerSeconds % 60;
+      timerDisplay.textContent = `${m}:${s.toString().padStart(2, "0")}`;
+    }
+  }, 1000);
+}
+
+timerBtn.addEventListener("click", () => {
+  timerPaused = !timerPaused;
+  timerBtn.textContent = timerPaused ? "▶" : "⏸";
+  timerBtn.title = timerPaused ? "Resume" : "Pause";
+});
+
+// ---------- New Puzzle Button ----------
+
+document.getElementById("newPuzzleBtn").addEventListener("click", () => {
   completeOverlay.classList.add("active");
+});
+
+socket.on("puzzle-complete", () => {
+  clearInterval(timerInterval);
+  completeOverlay.classList.add("active");
+});
+
+socket.on("puzzle-reset", ({ puzzle, grid }) => {
+  state.puzzle = puzzle;
+  state.grid = grid;
+  state.selectedCell = null;
+  state.activeClue = null;
+  completeOverlay.classList.remove("active");
+  startTimer();
+  puzzleTitle.textContent = puzzle.title;
+  renderGrid();
+  renderClues();
+});
+
+// ---------- Completion Overlay — Next Puzzle ----------
+
+let nextMode = "nyt";
+
+document.querySelectorAll("[data-next-mode]").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    nextMode = tab.dataset.nextMode;
+    document.querySelectorAll("[data-next-mode]").forEach((t) => t.classList.toggle("active", t === tab));
+    document.getElementById("nextModeNyt").classList.toggle("active", nextMode === "nyt");
+    document.getElementById("nextModeGenerated").classList.toggle("active", nextMode === "generated");
+    document.getElementById("nextPuzzleBtn").disabled = nextMode === "nyt"
+      ? !document.getElementById("nextPuzzleDate").value || document.getElementById("nextPuzzlePreview").classList.contains("error")
+      : false;
+  });
+});
+
+document.getElementById("nextRandomBtn").addEventListener("click", () => {
+  const start = new Date("1976-01-05"), end = new Date("2017-12-31");
+  const rand = new Date(start.getTime() + Math.random() * (end - start));
+  document.getElementById("nextPuzzleDate").value = rand.toISOString().slice(0, 10);
+  document.getElementById("nextPuzzleDate").dispatchEvent(new Event("change"));
+});
+
+document.getElementById("nextPuzzleDate").addEventListener("change", async (e) => {
+  const preview = document.getElementById("nextPuzzlePreview");
+  const btn = document.getElementById("nextPuzzleBtn");
+  const date = e.target.value;
+  if (!date) { preview.textContent = ""; btn.disabled = true; return; }
+  preview.className = "puzzle-preview loading";
+  preview.textContent = "Checking...";
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/puzzle/${date}`);
+    if (!res.ok) throw new Error();
+    const info = await res.json();
+    preview.className = "puzzle-preview found";
+    preview.textContent = `${info.dow ? info.dow + " — " : ""}${info.rows}×${info.cols} grid`;
+    btn.disabled = false;
+  } catch {
+    preview.className = "puzzle-preview error";
+    preview.textContent = "No puzzle found for this date — try another";
+    btn.disabled = true;
+  }
+});
+
+document.getElementById("nextPuzzleBtn").addEventListener("click", () => {
+  const btn = document.getElementById("nextPuzzleBtn");
+  btn.disabled = true;
+  btn.textContent = nextMode === "generated" ? "Generating..." : "Loading...";
+  if (nextMode === "generated") {
+    socket.emit("new-puzzle", {
+      generated: true,
+      theme: document.getElementById("nextGenTheme").value || undefined,
+      size: document.getElementById("nextGenSize").value || undefined,
+      difficulty: document.getElementById("nextGenDifficulty").value || undefined,
+    });
+  } else {
+    socket.emit("new-puzzle", { date: document.getElementById("nextPuzzleDate").value });
+  }
+  btn.disabled = false;
+  btn.textContent = "Play Next Puzzle";
 });
 
 socket.on("error-msg", (msg) => {

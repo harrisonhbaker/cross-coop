@@ -96,11 +96,17 @@ function transformNYTPuzzle(raw, dateStr) {
 
 // ---------- APIVerve Generated Puzzle ----------
 
-async function fetchGeneratedPuzzle() {
+async function fetchGeneratedPuzzle({ size, theme, difficulty } = {}) {
   const apiKey = process.env.APIVERVE_KEY;
   if (!apiKey) throw new Error("APIVERVE_KEY not set in environment");
 
-  const res = await fetch("https://api.apiverve.com/v1/crossword", {
+  const params = new URLSearchParams();
+  if (size) params.set("size", size);
+  if (theme) params.set("theme", theme);
+  if (difficulty) params.set("difficulty", difficulty);
+
+  const url = `https://api.apiverve.com/v1/crossword${params.toString() ? "?" + params : ""}`;
+  const res = await fetch(url, {
     headers: { "x-api-key": apiKey },
   });
   if (!res.ok) throw new Error(`Generated puzzle API error: HTTP ${res.status}`);
@@ -171,9 +177,10 @@ app.get("/api/puzzle/:date", async (req, res) => {
   }
 });
 
-app.post("/api/rooms/generated", async (_req, res) => {
+app.post("/api/rooms/generated", express.json(), async (req, res) => {
   try {
-    const puzzle = await fetchGeneratedPuzzle();
+    const { size, theme, difficulty } = req.body || {};
+    const puzzle = await fetchGeneratedPuzzle({ size, theme, difficulty });
     const roomId = uuidv4().slice(0, 5).toUpperCase();
     const grid = puzzle.solution.map((row) =>
       row.map((cell) => (cell === null ? null : ""))
@@ -288,6 +295,34 @@ io.on("connection", (socket) => {
         direction,
         color: room.players[socket.id].color,
       });
+    }
+  });
+
+  socket.on("new-puzzle", async ({ date, generated, theme, size, difficulty }) => {
+    if (!currentRoom || !rooms[currentRoom]) return;
+    try {
+      const puzzle = generated
+        ? await fetchGeneratedPuzzle({ theme, size, difficulty })
+        : await fetchNYTPuzzle(date);
+      const room = rooms[currentRoom];
+      room.puzzle = puzzle;
+      room.grid = puzzle.solution.map((row) => row.map((cell) => (cell === null ? null : "")));
+      io.to(currentRoom).emit("puzzle-reset", {
+        puzzle: {
+          id: puzzle.id,
+          title: puzzle.title,
+          dow: puzzle.dow,
+          date: puzzle.date,
+          rows: puzzle.rows,
+          cols: puzzle.cols,
+          clues: puzzle.clues,
+          gridnums: puzzle.gridnums,
+          shape: puzzle.solution.map((row) => row.map((cell) => (cell === null ? null : true))),
+        },
+        grid: room.grid,
+      });
+    } catch (err) {
+      socket.emit("error-msg", err.message);
     }
   });
 

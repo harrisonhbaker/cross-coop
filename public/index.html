@@ -122,6 +122,20 @@
     .mode-tab.active { background: #6C63FF; border-color: #6C63FF; color: #fff; }
     .mode-panel { display: none; flex-direction: column; gap: 0.75rem; }
     .mode-panel.active { display: flex; }
+    .gen-options { display: flex; gap: 0.5rem; }
+    .gen-option { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
+    .gen-option label { font-size: 0.8rem; color: #9999b3; font-weight: 600; }
+    .gen-option select {
+      padding: 0.65rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid #2a2a44;
+      background: #1c1c34;
+      color: #e8e8f0;
+      font-size: 0.85rem;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .gen-option select:focus { outline: none; border-color: #6C63FF; }
     .join-row input { flex: 1; }
 
     /* ---------- Game ---------- */
@@ -138,6 +152,19 @@
       width: 100%;
     }
     .game-header h2 { font-size: 1.3rem; }
+    .game-controls { display: flex; align-items: center; gap: 0.75rem; }
+    .timer-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: #1c1c34;
+      border: 1px solid #2a2a44;
+      border-radius: 8px;
+      padding: 0.3rem 0.6rem 0.3rem 0.8rem;
+    }
+    #timerDisplay { font-size: 0.95rem; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 3ch; }
+    .timer-btn { padding: 0.25rem 0.5rem; font-size: 0.85rem; background: transparent; border: none; }
+    .timer-btn:hover { background: #2a2a44; }
     .players-bar {
       display: flex;
       gap: 0.75rem;
@@ -306,6 +333,7 @@
       -webkit-text-fill-color: transparent;
     }
     .overlay p { color: #9999b3; font-size: 1.1rem; }
+    .overlay-picker { display: flex; flex-direction: column; gap: 1rem; width: 100%; max-width: 380px; }
 
     /* ---------- Error Toast ---------- */
     .toast {
@@ -366,7 +394,37 @@
 
       <!-- Generated mode -->
       <div class="mode-panel" id="modeGenerated">
-        <p style="font-size:0.85rem;color:#9999b3;text-align:center;line-height:1.5;">AI-generated crossword with a random theme. No date needed — just create and play!</p>
+        <div class="gen-options">
+          <div class="gen-option">
+            <label>Theme</label>
+            <select id="genTheme">
+              <option value="">Random</option>
+              <option value="animals">Animals</option>
+              <option value="food">Food</option>
+              <option value="sports">Sports</option>
+              <option value="science">Science</option>
+              <option value="geography">Geography</option>
+            </select>
+          </div>
+          <div class="gen-option">
+            <label>Size</label>
+            <select id="genSize">
+              <option value="">Random</option>
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+            </select>
+          </div>
+          <div class="gen-option">
+            <label>Difficulty</label>
+            <select id="genDifficulty">
+              <option value="">Random</option>
+              <option value="easy">Easy</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <button class="btn btn-primary" id="createBtn" disabled>Create Room</button>
@@ -384,6 +442,13 @@
   <div class="screen" id="game">
     <div class="game-header">
       <h2 id="puzzleTitle"></h2>
+      <div class="game-controls">
+        <div class="timer-wrap">
+          <span id="timerDisplay">0:00</span>
+          <button class="btn btn-secondary timer-btn" id="timerBtn" title="Pause">⏸</button>
+        </div>
+        <button class="btn btn-secondary" id="newPuzzleBtn">New Puzzle</button>
+      </div>
       <div class="players-bar" id="playersBar"></div>
     </div>
     <div class="game-layout">
@@ -396,7 +461,53 @@
   <div class="overlay" id="completeOverlay">
     <h1>Congratulations!</h1>
     <p>You solved the crossword together!</p>
-    <button class="btn btn-primary" onclick="location.reload()">Play Again</button>
+    <div class="overlay-picker">
+      <div class="mode-tabs">
+        <button class="mode-tab active" data-next-mode="nyt">NYT Archive</button>
+        <button class="mode-tab" data-next-mode="generated">Generated</button>
+      </div>
+      <div class="mode-panel active" id="nextModeNyt">
+        <div class="date-row">
+          <input type="date" id="nextPuzzleDate" min="1976-01-05" max="2017-12-31" />
+          <button class="btn btn-secondary random-btn" id="nextRandomBtn" title="Random puzzle">🎲</button>
+        </div>
+        <div class="puzzle-preview" id="nextPuzzlePreview"></div>
+      </div>
+      <div class="mode-panel" id="nextModeGenerated">
+        <div class="gen-options">
+          <div class="gen-option">
+            <label>Theme</label>
+            <select id="nextGenTheme">
+              <option value="">Random</option>
+              <option value="animals">Animals</option>
+              <option value="food">Food</option>
+              <option value="sports">Sports</option>
+              <option value="science">Science</option>
+              <option value="geography">Geography</option>
+            </select>
+          </div>
+          <div class="gen-option">
+            <label>Size</label>
+            <select id="nextGenSize">
+              <option value="">Random</option>
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+            </select>
+          </div>
+          <div class="gen-option">
+            <label>Difficulty</label>
+            <select id="nextGenDifficulty">
+              <option value="">Random</option>
+              <option value="easy">Easy</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="nextPuzzleBtn" disabled>Play Next Puzzle</button>
+    </div>
   </div>
 
   <div class="toast" id="toast"></div>
