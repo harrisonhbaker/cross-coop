@@ -112,6 +112,11 @@ async function fetchGeneratedPuzzle({ size, theme, difficulty } = {}) {
   const res = await fetch(url, {
     headers: { "x-api-key": apiKey },
   });
+  if (res.status === 429) {
+    const e = new Error("API token limit reached");
+    e.code = "TOKEN_LIMIT";
+    throw e;
+  }
   if (!res.ok) throw new Error(`Generated puzzle API error: HTTP ${res.status}`);
 
   const json = await res.json();
@@ -191,7 +196,8 @@ app.post("/api/rooms/generated", express.json(), async (req, res) => {
     rooms[roomId] = { puzzle, grid, players: {} };
     res.json({ roomId });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const status = err.code === "TOKEN_LIMIT" ? 429 : 500;
+    res.status(status).json({ error: err.message, code: err.code || null });
   }
 });
 
@@ -325,7 +331,7 @@ io.on("connection", (socket) => {
         grid: room.grid,
       });
     } catch (err) {
-      socket.emit("error-msg", err.message);
+      socket.emit("error-msg", err.message, err.code || null);
     }
   });
 

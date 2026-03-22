@@ -150,6 +150,7 @@ createBtn.addEventListener("click", async () => {
       });
     }
     const data = await res.json();
+    if (data.code === "TOKEN_LIMIT") { showTokenLimitModal(); return; }
     if (data.error) throw new Error(data.error);
     joinRoom(data.roomId);
   } catch (err) {
@@ -359,8 +360,21 @@ document.getElementById("nextPuzzleBtn").addEventListener("click", () => {
   btn.textContent = "Play Next Puzzle";
 });
 
-socket.on("error-msg", (msg) => {
-  showToast(msg, "#ff4444");
+const tokenModal = document.getElementById("tokenModal");
+document.getElementById("tokenModalClose").addEventListener("click", () => {
+  tokenModal.classList.remove("active");
+});
+
+function showTokenLimitModal() {
+  tokenModal.classList.add("active");
+}
+
+socket.on("error-msg", (msg, code) => {
+  if (code === "TOKEN_LIMIT") {
+    showTokenLimitModal();
+  } else {
+    showToast(msg, "#ff4444");
+  }
 });
 
 // ---------- Rendering ----------

@@ -335,6 +335,34 @@
     .overlay p { color: #9999b3; font-size: 1.1rem; }
     .overlay-picker { display: flex; flex-direction: column; gap: 1rem; width: 100%; max-width: 380px; }
 
+    /* ---------- Token Limit Modal ---------- */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 15, 26, 0.85);
+      z-index: 300;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-backdrop.active { display: flex; }
+    .modal {
+      background: #16162a;
+      border: 1px solid #2a2a44;
+      border-radius: 12px;
+      padding: 2rem;
+      max-width: 380px;
+      width: 90%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      text-align: center;
+    }
+    .modal-icon { font-size: 2.5rem; }
+    .modal h2 { font-size: 1.3rem; font-weight: 800; }
+    .modal p { color: #9999b3; font-size: 0.9rem; line-height: 1.5; }
+
     /* ---------- Footer ---------- */
     footer {
       margin-top: auto;
@@ -523,6 +551,16 @@
         </div>
       </div>
       <button class="btn btn-primary" id="nextPuzzleBtn" disabled>Play Next Puzzle</button>
+    </div>
+  </div>
+
+  <!-- ===== Token Limit Modal ===== -->
+  <div class="modal-backdrop" id="tokenModal">
+    <div class="modal">
+      <div class="modal-icon">⚠️</div>
+      <h2>Monthly Limit Reached</h2>
+      <p>The generated puzzle API has run out of tokens for this month. You can still play NYT archive puzzles in the meantime.</p>
+      <button class="btn btn-primary" id="tokenModalClose">Got it</button>
     </div>
   </div>
 
