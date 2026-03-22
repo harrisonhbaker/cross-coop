@@ -17,6 +17,7 @@ const puzzleTitle = document.getElementById("puzzleTitle");
 const playersBar = document.getElementById("playersBar");
 const gridWrapper = document.getElementById("gridWrapper");
 const cluesPanel = document.getElementById("cluesPanel");
+const modeTabs = document.querySelectorAll(".mode-tab");
 const toast = document.getElementById("toast");
 const completeOverlay = document.getElementById("completeOverlay");
 
@@ -108,20 +109,39 @@ socket.on("connect", () => {
   checkDate(puzzleDateInput.value);
 });
 
+// ---------- Mode Tabs ----------
+
+let activeMode = "nyt";
+
+modeTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    activeMode = tab.dataset.mode;
+    modeTabs.forEach((t) => t.classList.toggle("active", t === tab));
+    document.querySelectorAll(".mode-panel").forEach((p) => p.classList.remove("active"));
+    document.getElementById(activeMode === "nyt" ? "modeNyt" : "modeGenerated").classList.add("active");
+    createBtn.disabled = activeMode === "nyt" ? !puzzleDateInput.value || puzzlePreview.classList.contains("error") : false;
+  });
+});
+
 // ---------- Lobby Actions ----------
 
 createBtn.addEventListener("click", async () => {
-  const date = puzzleDateInput.value;
-  if (!date) return;
   createBtn.disabled = true;
-  createBtn.textContent = "Creating...";
+  createBtn.textContent = activeMode === "generated" ? "Generating..." : "Creating...";
 
   try {
-    const res = await fetch("/api/rooms", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date }),
-    });
+    let res;
+    if (activeMode === "generated") {
+      res = await fetch("/api/rooms/generated", { method: "POST" });
+    } else {
+      const date = puzzleDateInput.value;
+      if (!date) return;
+      res = await fetch("/api/rooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+    }
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     joinRoom(data.roomId);

@@ -101,6 +101,27 @@
     .divider { display: flex; align-items: center; gap: 1rem; width: 100%; color: #555; font-size: 0.85rem; }
     .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: #2a2a44; }
     .join-row { display: flex; gap: 0.5rem; }
+    .mode-tabs {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .mode-tab {
+      flex: 1;
+      padding: 0.65rem 1rem;
+      border: 1px solid #2a2a44;
+      border-radius: 8px;
+      background: #1c1c34;
+      color: #9999b3;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .mode-tab:hover { border-color: #6C63FF; color: #e8e8f0; }
+    .mode-tab.active { background: #6C63FF; border-color: #6C63FF; color: #fff; }
+    .mode-panel { display: none; flex-direction: column; gap: 0.75rem; }
+    .mode-panel.active { display: flex; }
     .join-row input { flex: 1; }
 
     /* ---------- Game ---------- */
@@ -327,12 +348,26 @@
     <div class="lobby-actions">
       <input type="text" id="playerName" placeholder="Your name" maxlength="20" />
 
-      <label style="font-size:0.85rem;color:#9999b3;">Pick a date (NYT puzzles: 1976 – 2017)</label>
-      <div class="date-row">
-        <input type="date" id="puzzleDate" min="1976-01-05" max="2017-12-31" />
-        <button class="btn btn-secondary random-btn" id="randomBtn" title="Random puzzle">🎲</button>
+      <!-- Mode selector -->
+      <div class="mode-tabs">
+        <button class="mode-tab active" data-mode="nyt">NYT Archive</button>
+        <button class="mode-tab" data-mode="generated">Generated</button>
       </div>
-      <div class="puzzle-preview" id="puzzlePreview"></div>
+
+      <!-- NYT mode -->
+      <div class="mode-panel active" id="modeNyt">
+        <label style="font-size:0.85rem;color:#9999b3;">Pick a date (NYT puzzles: 1976 – 2017)</label>
+        <div class="date-row">
+          <input type="date" id="puzzleDate" min="1976-01-05" max="2017-12-31" />
+          <button class="btn btn-secondary random-btn" id="randomBtn" title="Random puzzle">🎲</button>
+        </div>
+        <div class="puzzle-preview" id="puzzlePreview"></div>
+      </div>
+
+      <!-- Generated mode -->
+      <div class="mode-panel" id="modeGenerated">
+        <p style="font-size:0.85rem;color:#9999b3;text-align:center;line-height:1.5;">AI-generated crossword with a random theme. No date needed — just create and play!</p>
+      </div>
 
       <button class="btn btn-primary" id="createBtn" disabled>Create Room</button>
 

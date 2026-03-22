@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -93,6 +94,62 @@ function transformNYTPuzzle(raw, dateStr) {
   };
 }
 
+// ---------- APIVerve Generated Puzzle ----------
+
+async function fetchGeneratedPuzzle() {
+  const apiKey = process.env.APIVERVE_KEY;
+  if (!apiKey) throw new Error("APIVERVE_KEY not set in environment");
+
+  const res = await fetch("https://api.apiverve.com/v1/crossword", {
+    headers: { "x-api-key": apiKey },
+  });
+  if (!res.ok) throw new Error(`Generated puzzle API error: HTTP ${res.status}`);
+
+  const json = await res.json();
+  if (json.status !== "ok") throw new Error(json.error || "API returned error");
+
+  return transformAPIPuzzle(json.data);
+}
+
+function transformAPIPuzzle(data) {
+  const size = data.size;
+  const grid = data.grid; // 2D array: null or letter string
+
+  // Build gridnums using standard crossword numbering (reading order)
+  const gridnums = Array.from({ length: size }, () => Array(size).fill(0));
+  let num = 1;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (grid[r][c] === null) continue;
+      const startsAcross = (c === 0 || grid[r][c - 1] === null) && c + 1 < size && grid[r][c + 1] !== null;
+      const startsDown = (r === 0 || grid[r - 1][c] === null) && r + 1 < size && grid[r + 1][c] !== null;
+      if (startsAcross || startsDown) gridnums[r][c] = num++;
+    }
+  }
+
+  const acrossClues = data.across.map((c) => {
+    const pos = findCluePosition(gridnums, c.number);
+    return { number: c.number, text: c.clue, ...pos };
+  });
+  const downClues = data.down.map((c) => {
+    const pos = findCluePosition(gridnums, c.number);
+    return { number: c.number, text: c.clue, ...pos };
+  });
+
+  const theme = data.theme ? data.theme.charAt(0).toUpperCase() + data.theme.slice(1) : "Generated";
+  return {
+    id: `generated-${Date.now()}`,
+    title: `${theme} Crossword`,
+    dow: "",
+    date: new Date().toISOString().slice(0, 10),
+    rows: size,
+    cols: size,
+    solution: grid,
+    gridnums,
+    clues: { across: acrossClues, down: downClues },
+  };
+}
+
 function findCluePosition(gridnums, number) {
   for (let r = 0; r < gridnums.length; r++) {
     for (let c = 0; c < gridnums[r].length; c++) {
@@ -111,6 +168,20 @@ app.get("/api/puzzle/:date", async (req, res) => {
     res.json({ id: puzzle.id, title: puzzle.title, dow: puzzle.dow, rows: puzzle.rows, cols: puzzle.cols });
   } catch (err) {
     res.status(404).json({ error: err.message });
+  }
+});
+
+app.post("/api/rooms/generated", async (_req, res) => {
+  try {
+    const puzzle = await fetchGeneratedPuzzle();
+    const roomId = uuidv4().slice(0, 5).toUpperCase();
+    const grid = puzzle.solution.map((row) =>
+      row.map((cell) => (cell === null ? null : ""))
+    );
+    rooms[roomId] = { puzzle, grid, players: {} };
+    res.json({ roomId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
