@@ -121,7 +121,7 @@ app.post("/api/rooms", express.json(), async (req, res) => {
 
     const puzzle = await fetchNYTPuzzle(date);
 
-    const roomId = uuidv4().slice(0, 8);
+    const roomId = uuidv4().slice(0, 5).toUpperCase();
     // Build an empty grid from the solution (null stays null, letters become "")
     const grid = puzzle.solution.map((row) =>
       row.map((cell) => (cell === null ? null : ""))

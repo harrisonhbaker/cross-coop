@@ -593,5 +593,10 @@ document.getElementById("logoBtn").addEventListener("click", () => {
   const room = params.get("room");
   if (room) {
     roomInput.value = room;
+    if (socket.connected) {
+      joinRoom(room);
+    } else {
+      socket.once("connect", () => joinRoom(room));
+    }
   }
 })();
