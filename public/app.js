@@ -573,6 +573,20 @@ function escHtml(str) {
   return el.innerHTML;
 }
 
+// ---------- Logo → back to lobby ----------
+document.getElementById("logoBtn").addEventListener("click", () => {
+  if (gameScreen.classList.contains("active")) {
+    socket.emit("leave-room", { roomId: state.roomId });
+    state = { roomId: null, puzzle: null, grid: null, players: {}, myId: null, selectedCell: null, direction: "across", activeClue: null };
+    gridWrapper.innerHTML = "";
+    cluesPanel.innerHTML = "";
+    gameScreen.classList.remove("active");
+    lobbyScreen.classList.add("active");
+    roomBadge.style.display = "none";
+    history.replaceState(null, "", window.location.pathname);
+  }
+});
+
 // ---------- Auto-join from URL ----------
 (function checkUrlRoom() {
   const params = new URLSearchParams(window.location.search);

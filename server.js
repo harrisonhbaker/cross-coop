@@ -220,6 +220,22 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("leave-room", () => {
+    if (currentRoom && rooms[currentRoom]) {
+      delete rooms[currentRoom].players[socket.id];
+      socket.leave(currentRoom);
+      io.to(currentRoom).emit("player-left", { id: socket.id });
+      if (Object.keys(rooms[currentRoom].players).length === 0) {
+        setTimeout(() => {
+          if (rooms[currentRoom] && Object.keys(rooms[currentRoom].players).length === 0) {
+            delete rooms[currentRoom];
+          }
+        }, 60000);
+      }
+      currentRoom = null;
+    }
+  });
+
   socket.on("disconnect", () => {
     if (currentRoom && rooms[currentRoom]) {
       delete rooms[currentRoom].players[socket.id];
